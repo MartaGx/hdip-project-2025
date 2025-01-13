@@ -1,0 +1,630 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+```{r}
+library(tidyverse)
+library(packcircles)
+```
+
+
+```{r}
+setwd("C:/Users/iceim/Dropbox/Data Analytics DKIT/Year 2/Project")
+houses = read_csv("houses.csv")
+```
+
+
+
+```{r}
+str(houses)
+```
+
+```{r}
+summary(houses)
+```
+```{r}
+# Converting the dataframe into a tibble
+as_tibble(houses)
+```
+------------- UNIVARIATE ANALYSIS -------------
+
+```{r}
+# Creating a table from the county column, count in decreasing order, to prepare for the barplot
+table_county <- table(houses$county)
+table_county <- table_county[order(table_county, decreasing=FALSE)]
+table_county
+```
+
+```{r}
+# Converting the table into a Data Frame for ggplot2
+df_county <- data.frame(table_county)
+df_county
+```
+```{r}
+ggplot(df_county, aes(x=Freq, y=Var1)) +
+  geom_col(color = "black", fill = "#0c775e", width = 0.6) +
+  labs(title="Count of Listings per County", x=NULL, y=NULL) +
+  geom_text(aes(label = Freq), hjust = -0.2)+
+  theme_classic()
+```
+Over 1/3 of the listings are located in Dublin, while the other listings are spread unevenly between the other 25 counties. Merging those counties into meaningful groups has to be considered for efficient analysis.
+
+
+```{r}
+ggplot(df_county, aes(x = Freq, y = Var1, size = Freq, color = Var1)) +
+  geom_point() +
+  scale_size(name = "Size", range = c(1, 26))
+```
+```{r}
+packing <- circleProgressiveLayout(df_county$Freq, sizetype='area')
+ 
+# We can add these packing information to the initial data frame
+data <- cbind(df_county, packing)
+ 
+# Check that radius is proportional to value. We don't want a linear relationship, since it is the AREA that must be proportionnal to the value
+#plot(data$radius, data$value)
+ 
+# The next step is to go from one center + a radius to the coordinates of a circle that
+# is drawn by a multitude of straight lines.
+dat.gg <- circleLayoutVertices(packing, npoints=50)
+ 
+# Make the plot
+ggplot() + 
+  
+  # Make the bubbles
+  geom_polygon(data = dat.gg, aes(x, y, group = id, fill=as.factor(id)), colour = "black", alpha = 0.6) +
+  
+  # Add text in the center of each bubble + control its size
+  geom_text(data = data, aes(x, y, size=Freq, label = Var1)) +
+  scale_size_continuous(range = c(1,10)) +
+  
+  # General theme:
+  theme_void() + 
+  theme(legend.position="none") +
+  coord_equal()
+
+```
+
+
+```{r}
+# Transforming price variable into millions of Euro to make the graphs more legible
+house_price_mln <- houses %>%
+  mutate(sold_price_eur = sold_price_eur/1000000,
+         asking_price_eur = asking_price_eur/1000000)
+
+head(house_price_mln)
+```
+
+
+```{r}
+par(mfrow=c(1,2))
+boxplot(house_price_mln$sold_price_eur/1000000, main="Boxplot of Sold Price in mln", ylab="Price (mln)", ylim=c(0,5), col="brown2")
+hist(house_price_mln$sold_price_eur/1000000, main="Histogram of Sold Price in mln", xlab="Price (mln)", ylab="Count", col="brown2")
+```
+The graphs show that the median house price is around €300,000 (€342,000), and that most houses in this dataset were sold for below €1mln. There are a good few outliers between €1mln and €2mln, and five extreme outliers - properties that were sold for between €2mln and €5mln. A subset has to be created to take a closer look at the distribution of the houses with sold price below €1mln.
+
+```{r}
+houses_below1m <- subset(houses, sold_price_eur<1000000)
+houses_below1m %>% arrange(desc(sold_price_eur)) %>% head()
+
+```
+
+```{r}
+par(mfrow=c(1,2))
+boxplot(houses_below1m$sold_price_eur/1000, main="Boxplot of Sold Price below €1mln", ylab="Price (x €1000)", col="brown2")
+hist(houses_below1m$sold_price_eur/1000, main="Histogram of Sold Price below €1mln", xlab="Price (x €1000)", ylab="Count", col="brown2")
+```
+
+```{r}
+par(mfrow=c(1,2))
+boxplot(house_price_mln$asking_price_eur, main="Boxplot of Asking Price in mln", ylab="Price (mln)", ylim=c(0,5), col="orange")
+hist(house_price_mln$asking_price_eur, main="Histogram of Asking Price in mln", xlab="Price (mln)", ylab="Count", col="orange")
+```
+
+```{r}
+par(mfrow=c(1,2))
+boxplot(houses_below1m$asking_price_eur/1000, main="Boxplot of Asking Price below €1mln", ylab="Price (x €1000)", col="orange")
+hist(houses_below1m$asking_price_eur/1000, main="Histogram of Asking Price below €1mln", xlab="Price (x €1000)", ylab="Count", col="orange")
+```
+
+
+```{r}
+# Looking at the different house types
+house_types <- table(houses$house_type)
+house_types <- house_types[order(house_types, decreasing=FALSE)]
+house_types
+
+prop.table(house_types)
+```
+There are 8 different house types. Most of them are Semi-Detached. For the purposes of the analysis, the house types which are similar need to be merged, i.e. Terrace + Townhouse, Apartment + Duplex, Detached + Bungalow, Semi-D + End of Terrace, which would narrow it down to 4 groups.
+
+Apartment = c("Apartment", "Duplex"),
+Detached = c("Detached", "Bungalow"),
+Semi-D = c("Semi-D", "End of Terrace"),
+Terrace = c("Terrace", "Townhouse"),
+
+
+
+```{r}
+par(mfrow=c(1,2))
+barplot(house_types, main="Barplot of House Type", xlim=c(0,800), xlab="Count", col="orange", horiz=T, las=1)
+pie(house_types, main="Pie Chart of House Type")
+```
+
+```{r}
+house_types_df <- data.frame(house_types)
+house_types_df
+```
+
+```{r}
+h1 <- ggplot(house_types_df, aes(x = "", y=Var1, fill=Var1)) +
+  geom_col(color = "black") +
+  geom_text(aes(label = Freq),
+            position = position_stack(vjust = 0.5)) +
+  coord_polar(theta = "y") +
+  labs(title ="Pie Chart of House Type (original classificaion)")+
+  guides(fill=guide_legend(title="House Type"))+
+  theme_void()
+
+h1
+```
+
+```{r}
+houses %>% data.frame(houses) %>% 
+  ggplot(aes(y = 2, fill=house_type)) +
+  geom_bar(color = "black") +
+  theme_void()+
+  scale_fill_viridis_d() +
+  coord_polar(theta = "x") +
+  ylim(0.2,2.5)+
+  labs(title ="Pie Chart of House Type (original classificaion)")+
+  guides(fill=guide_legend(title="House Type"))
+  
+  
+```
+
+ 
+
+```{r}
+# Defining replacement values
+
+replace_house_types <- c("Duplex"="Apartment",
+                         "Bungalow"="Detached",
+                         "End of Terrace"="Semi-D",
+                         "Townhouse"="Terrace")
+            
+# Using str_replace_all() to replace the names in the house_type column
+house_types_collapsed <- data.frame(houses)
+house_types_collapsed$house_type <- str_replace_all(house_types_collapsed$house_type, replace_house_types)
+#view(house_types_collapsed)
+
+```
+
+
+```{r}
+house_types_collapsed_tbl <- table(house_types_collapsed$house_type)
+house_types_collapsed_tbl <- house_types_collapsed_tbl[order(house_types_collapsed_tbl, decreasing=FALSE)]
+house_types_collapsed_tbl
+```
+
+
+```{r}
+par(mfrow=c(1,2))
+barplot(house_types_collapsed_tbl, main="Barplot of House Type", xlim=c(0,800), xlab="Count", col="orange", horiz=T, las=1)
+pie(house_types_collapsed_tbl, main="Pie Chart of House Type")
+```
+
+
+```{r}
+house_types_collapsed_df <- data.frame(house_types_collapsed_tbl)
+house_types_collapsed_df
+
+prop.table(house_types_collapsed_tbl)
+
+h2 <- ggplot(house_types_collapsed_df, aes(x = "", y=Var1, fill=Var1)) +
+  geom_col(color = "black") +
+  geom_text(aes(label = Freq),
+            position = position_stack(vjust = 0.5)) +
+  coord_polar(theta = "y") +
+  labs(title ="Pie Chart of House Type (merged classification)")+
+  guides(fill=guide_legend(title="House Type"))+
+  theme_void()
+
+h2
+
+```
+```{r}
+house_types_collapsed %>% data.frame(house_types_collapsed) %>% 
+  ggplot(aes(y = 2, fill=house_type)) +
+  geom_bar(color = "black") +
+  theme_void()+
+  scale_fill_viridis_d() +
+  coord_polar(theta = "x") +
+  ylim(0.2,2.5)+
+  labs(title ="Pie Chart of House Type (merged classificaion)")+
+  guides(fill=guide_legend(title="House Type"))
+
+```
+
+
+
+
+```{r}
+par(mfrow=c(1,2))
+boxplot(houses$bed_no, main="Boxplot of Bedroom No.", col="gold1")
+hist(houses$bed_no, breaks=7, main="Histogram of Bedroom No.", col="gold1")
+```
+
+
+```{r}
+par(mfrow=c(1,2))
+boxplot(houses$bath_no, main="Boxplot of No. of Bathrooms", col="darkolivegreen2")
+hist(houses$bath_no, breaks=7, main="Histogram of No. of Bathrooms", col="darkolivegreen2")
+```
+
+
+```{r}
+par(mfrow=c(1,2))
+boxplot(houses$size, main="House Size (sq m)", col="skyblue1")
+hist(houses$size, main="House Size (sq m)", col="skyblue1")
+```
+
+
+```{r}
+houses <- houses %>% 
+  mutate(price_per_sqm = round(sold_price_eur / size, 2))
+
+head(houses)
+tail(houses)
+```
+
+
+```{r}
+par(mfrow=c(1,2))
+boxplot(houses$price_per_sqm, main="Price € per Square Metre", col="deepskyblue")
+hist(houses$price_per_sqm, main="Price € per Square Metre", col="deepskyblue")
+```
+
+
+```{r}
+houses_below10k <- subset(houses, price_per_sqm <=10000)
+
+par(mfrow=c(1,2))
+boxplot(houses_below10k$price_per_sqm, main="Price € per Square Metre", col="deepskyblue")
+hist(houses_below10k$price_per_sqm, main="Price € per Square Metre", col="deepskyblue")
+```
+
+
+```{r}
+# Dealing with date, converting it from character
+#library(lubridate)
+houses$date_of_sale <- as.Date(houses$date_of_sale, format="%d/%m/%Y")
+#houses$date_of_sale <- as.Date(dmy(houses$date_of_sale))
+print(houses)
+```
+
+
+```{r}
+count_by_month <- houses %>% 
+    group_by(month = lubridate::floor_date(date_of_sale, 'month')) %>%
+    count() %>% 
+    arrange(month)
+  
+              
+print(count_by_month)
+```
+
+
+```{r}
+# PLOT MONTHS
+months_df <- data.frame(count_by_month)
+```
+
+```{r}
+ggplot(months_df, aes(x=month, y=n))+
+  geom_col(color = "black", fill="dodgerblue")+
+  labs(title="Count of Houses Sold by Month (house ads from Jul '23)", x=NULL, y="Count")+
+  theme_classic()+
+  theme(axis.text.x = element_text(angle = 60, hjust = 0.9))+
+  scale_x_date(date_labels="%b-%y", breaks="1 month")+
+  geom_text(aes(label = n), hjust = 0.5, vjust = -0.4)
+  
+```
+```{r}
+ggplot(months_df, aes(x=month, y=n))+
+  geom_path(color = "#0099f9", size = 1)+
+  geom_point(color = "#0099f9", size = 2)+
+  labs(title="Count of Houses Sold by Month", x=NULL, y="Count", 
+       subtitle = "Houses available for sale in July 2023",
+       caption = "Source: Daft.ie")+
+  theme_classic()+
+  theme(axis.text.x = element_text(angle = 60, hjust = 0.9))+
+  scale_x_date(date_labels="%b-%y", breaks="1 month")+
+  geom_text(aes(label = n), hjust = 0.3, vjust = -0.3)
+```
+
+
+```{r}
+table_daft_sticker <- table(houses$daft_sticker)
+table_daft_sticker
+```
+
+
+```{r}
+table_ad_info <- table(houses$ad_info)
+table_ad_info
+```
+
+------------- BIVARIATE ANALYSIS -------------
+
+```{r}
+#plot(sold_price_eur/1000000 ~ size, data=houses, main = "Scatter Plot of Sq M vs Price", ylab="Price (mln)", xlab="House Size (Sq M)", pch=19, col=as.factor(county))
+```
+
+```{r}
+#Changed the extreme outlier that was at 850 sq m to 85 sq m, as the price was very low and it was a regular semi-D, so it must have been a mistake
+```
+
+```{r}
+ggplot(houses, aes(size, sold_price_eur/1000000, color=county)) +
+  geom_point()+
+    labs(x = "House Size (sq m)", y = "Price (mln €)",
+      title ="Scatter Plot of Sq M vs Price")
+```
+
+
+```{r}
+plot(I(sold_price_eur/1000000) ~ I(asking_price_eur/1000000), data=houses, main = "Asking Price vs Sold Price", ylab="Sold Price in mln € (PPR)", xlab="Asking Price in mln € (Daft)", pch=19, col=alpha("#0099f9", 0.2))
+```
+There is an extreme outlier at €5,000,000, which is a verified listing at 26 Herbert Park, Ballsbridge, Dublin 4
+https://www.irishtimes.com/property/residential/2023/04/27/crampton-built-home-at-herbert-park-a-rare-offering-for-5m/
+
+
+```{r}
+par(mfrow=c(1,2))
+boxplot(I(sold_price_eur/1000000) ~ bed_no, data=houses, main = "No. of Bedrooms vs Sold Price", xlab="Bedroom No.", ylab="Price (mln)", col="steelblue1")
+boxplot(I(sold_price_eur/1000000) ~ bath_no, data=houses, main = "No. of Bathrooms vs Sold Price", xlab="Bathroom No.", ylab="Price (mln)", col="darkslategray2")
+```
+
+
+
+```{r}
+boxplot(data=houses, sold_price_eur/1000000 ~ county, col="red2", las=2, ylab="Price (mln)", xlab=NULL, main="Sold Price by County")
+```
+
+```{r}
+# Zooming in on the houses below €1mln and reordering boxplots from the highest median to the lowest
+houses_below1m_ordered <- with(houses_below1m, reorder(county, sold_price_eur, median, decreasing=TRUE, na.rm=T))
+boxplot((houses_below1m$sold_price_eur/1000) ~ houses_below1m_ordered, col="red2", las=2, ylab="Price (thousands)", xlab=NA, main="Sold Price by County")
+```
+
+```{r}
+houses_regions <- houses %>% 
+  mutate(region = county) %>% 
+   group_by(region = fct_collapse(county,  
+      "dublin" = c("dublin"),
+      "cork" = c("cork"),
+      "galway" = c("galway"),
+      "east_coast" = c("wicklow", "kildare", "meath"),
+      "south_coast" = c("waterford", "kerry", "wexford"),
+      "west_coast" = c("limerick", "clare", "mayo"),
+      "north_coast" = c("louth", "sligo", "leitrim", "donegal"),
+      "midlands" = c("carlow", "kilkenny", "laois", "westmeath", "offaly", "monaghan", "cavan", "tipperary", "longford", "roscommon"))) %>% 
+  relocate(region, .after=county)
+
+print(houses_regions)
+```
+
+
+```{r}
+houses_regions_new <- houses %>% 
+  mutate(region = county) %>% 
+   group_by(region = fct_collapse(county,  
+      "dublin" = c("dublin"),
+      "cork" = c("cork"),
+      "galway" = c("galway"),
+      "dub_inner_ring" = c("wicklow", "kildare", "meath"),
+      "dub_outer_ring" = c("louth", "westmeath", "offaly", "laois", "carlow"),
+      "urban_south" = c("limerick", "waterford"),
+      "other" = c("cavan", "clare", "donegal", "kerry", "kilkenny", "leitrim", "longford", "mayo", "monaghan", "roscommon", "sligo", "tipperary", "wexford"))) %>% 
+  relocate(region, .after=county)
+
+```
+
+
+```{r pressure, echo=FALSE, fig.cap="A caption", out.width = '50%'}
+knitr::include_graphics("ireland-counties-map-new.jpg")
+```
+
+```{r pressure, echo=FALSE, fig.cap="A caption", out.width = '50%'}
+knitr::include_graphics("map.jpg")
+```
+
+```{r pressure, echo=FALSE, fig.cap="A caption", out.width = '50%'}
+knitr::include_graphics("median_by_county.jpg")
+
+```
+
+
+
+
+
+
+```{r}
+cols_region <- c("dublin"="royalblue2",
+                "cork"="lightcoral",
+                "galway"="tan1",
+                "dub_inner_ring"="cornflowerblue",
+                "dub_outer_ring"="lightskyblue",
+                "urban_south"="lightgoldenrod1",
+                "other"="darkseagreen2")
+```
+
+
+```{r}
+ggplot(houses_regions_new, aes(size, sold_price_eur/1000000, color=region)) +
+  geom_point()+
+    labs(x = "House Size (sq m)", y = "Price (mln €)",
+      title ="Scatter Plot of Sq M vs Price")+
+  scale_color_manual(values=cols_region)+
+ theme_bw()
+```
+
+
+```{r}
+table_region <- table(houses_regions$region)
+table_region <- table_region[order(table_region, decreasing=FALSE)]
+table_region
+```
+
+
+```{r}
+table_region_new <- table(houses_regions_new$region)
+table_region_new <- sort(table_region_new)
+table_region_new
+```
+
+
+```{r}
+regions_df <- data.frame(table_region_new)
+#regions_df
+
+ggplot(regions_df, aes(x=Freq, y=Var1, fill=Var1)) +
+  geom_col(color = "black", width = 0.6) +
+  labs(title="Count of Listings per Region", x=NULL, y=NULL) +
+  geom_text(aes(label = Freq), hjust = -0.1)+
+  scale_fill_manual(values=cols_region)+
+  theme_classic()+
+  theme(legend.position="none")
+```
+
+
+```{r}
+#houses_regions_ordered <- with(houses_regions_new, reorder(region, sold_price_eur, median, decreasing=TRUE, na.rm=T))
+#boxplot(data=houses_regions_new, sold_price_eur/1000 ~ region, col=cols_region, las=2, ylab="Price (thousands)", xlab=NA)
+
+houses_below1m_ordered <- with(houses_below1m, reorder(county, sold_price_eur, median, decreasing=TRUE, na.rm=T))
+boxplot((houses_below1m$sold_price_eur/1000) ~ houses_below1m_ordered, col="red2", las=2, ylab="Price (thousands)", xlab=NA)
+```
+
+
+
+```{r}
+ggplot(houses_regions_new, aes(x=reorder(region, -sold_price_eur), y=sold_price_eur/1000000))+
+  geom_boxplot(fill= c("dublin"="royalblue2",
+                       "dub_inner_ring"="cornflowerblue",
+                        "galway"="tan1",
+                        "cork"="lightcoral",
+                        "urban_south"="lightgoldenrod1",
+                        "dub_outer_ring"="lightskyblue",
+                        "other"="darkseagreen2"))+
+  labs(x = NULL, y = "Price (mln €)",
+      title ="Distribution of Sold Price By Region")+
+  theme_bw()
+```
+
+
+```{r}
+houses_regions_below1m <-  subset(houses_regions_new, sold_price_eur<1000000)
+
+ggplot(houses_regions_below1m, aes(x=reorder(region, -sold_price_eur), y=sold_price_eur/1000, fill=region))+
+  geom_boxplot()+
+  scale_fill_manual(values= c("dublin"="royalblue2",
+                       "dub_inner_ring"="cornflowerblue",
+                        "galway"="tan1",
+                        "cork"="lightcoral",
+                        "urban_south"="lightgoldenrod1",
+                        "dub_outer_ring"="lightskyblue",
+                        "other"="darkseagreen2"), breaks=c("dublin",
+                       "dub_inner_ring",
+                        "galway",
+                        "cork",
+                        "urban_south",
+                        "dub_outer_ring",
+                        "other"))+
+  labs(x = NULL, y = "Price (thousands €)",
+      title ="Distribution of Sold Price By Region (below €1mln)")+
+  theme_bw()+
+  theme(legend.position="none")
+```
+
+
+```{r}
+ggplot(house_types_collapsed, aes(x=reorder(house_type, -sold_price_eur), y=sold_price_eur/1000000))+
+  geom_boxplot(fill= c("#8c4a3d", "#d67237", "#d8a499", "#f1bb7b"))+
+  labs(x = NULL, y = "Price (mln €)",
+      title ="Distribution of Sold Price By House Type")+
+  theme_bw()
+
+```
+c("#7294d4", "#c6cdf7", "#d8a499", "#e6a0c4")
+
+```{r}
+house_types_below1m <-  subset(house_types_collapsed, sold_price_eur<1000000)
+
+ggplot(house_types_below1m, aes(x=reorder(house_type, -sold_price_eur), y=sold_price_eur/1000))+
+  geom_boxplot(fill= c("#8c4a3d", "#d67237", "#d8a499", "#f1bb7b"))+
+  labs(x = NULL, y = "Price (thousands €)",
+      title ="Distribution of Sold Price By House Type (below €1mln)")+
+  theme_bw()
+```
+```{r}
+house_types_collapsed %>% subset(price_per_sqm <=10000) %>% 
+  ggplot(aes(x=reorder(house_type, -price_per_sqm), y=price_per_sqm))+
+  geom_boxplot(fill= c("#f1bb7b", "#d8a499","#d67237", "#8c4a3d"))+
+  labs(x = NULL, y = "Price Per Sq M (€/m2)",
+      title ="Distribution of Price Per Sq M By House Type (below €1mln)")+
+  theme_bw()
+  
+```
+
+
+
+```{r}
+# Investigating the median price of houses by county
+df_houses <- data.frame(houses)
+price_by_county <- df_houses %>% 
+  group_by(county) %>% 
+  summarize(county_median = median(sold_price_eur)) %>% 
+  arrange(desc(county_median)) 
+  
+  
+price_by_county
+```
+
+
+  
+  
+```{r}
+houses_pairs <- houses %>% 
+ select(sold_price_eur, asking_price_eur, bed_no, bath_no, size)
+  
+
+  # pairs(houses_pairs)
+```
+correlations on pairs graph: https://www.sthda.com/english/wiki/scatter-plot-matrices-r-base-graphs
+
+```{r}
+pairs(houses_pairs[,1:5], pch = 19,  cex = 0.5,
+      lower.panel=NULL)
+
+# Correlation panel
+panel_cor <- function(x, y){
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    r <- round(cor(x, y, use="pairwise"), digits=2) # added use="pairwise" to omit the NA values in Size and Bath No.
+    txt <- paste0("R = ", r)
+    cex_cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt, cex = cex_cor * r)
+}
+# Customize upper panel
+upper_panel<-function(x, y){
+  points(x,y, pch = 19, col = alpha("#0099f9", 0.2)) 
+}
+# Create the plots
+pairs(houses_pairs[,1:5], 
+      lower.panel = panel_cor,
+      upper.panel = upper_panel)
+```
+
