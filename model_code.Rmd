@@ -1,0 +1,199 @@
+```{r}
+library(tidyverse)
+library(caret)
+```
+
+```{r}
+setwd("C:/Users/iceim/Dropbox/Data Analytics DKIT/Year 2/Project")
+houses = read_csv("houses.csv")
+```
+
+
+```{r}
+# Inspecting the structure of the data
+str(houses)
+```
+
+```{r} 
+# Taking a look at the summary of each variable
+summary(houses)
+```
+
+
+```{r}
+# Creating a new data frame with variables needed for the model
+h <- houses %>%
+  select(sold_price_eur, asking_price_eur, bed_no, bath_no, size, house_type, county) %>% 
+  mutate(region = county) %>% 
+   group_by(region = fct_collapse(county,  
+      "dublin" = c("dublin"),
+      "cork" = c("cork"),
+      "galway" = c("galway"),
+      "dub_inner_ring" = c("wicklow", "kildare", "meath"),
+      "dub_outer_ring" = c("louth", "westmeath", "offaly", "laois", "carlow"),
+      "urban_south" = c("limerick", "waterford"),
+      "other" = c("cavan", "clare", "donegal", "kerry", "kilkenny", "leitrim", "longford", "mayo", "monaghan", "roscommon", "sligo", "tipperary", "wexford"))) %>% 
+  relocate(region, .after=county) %>% 
+  select(-county) # Removing the 'county' variable now that we have the 26 counties merged into 7 regions
+```
+
+```{r}
+replace_house_types <- c("Duplex"="Apartment",
+                         "Bungalow"="Detached",
+                         "End of Terrace"="Semi-D",
+                         "Townhouse"="Terrace")
+            
+# Using str_replace_all() to replace the names in the house_type column
+h <- data.frame(h)
+h$house_type <- str_replace_all(h$house_type, replace_house_types)
+```
+
+
+```{r}
+# Inspecting the result
+head(h)
+```
+```{r}
+# Creating dummy variables from the categorical variables: house_type and region
+h$detached <- ifelse(h$house_type == "Detached", 1, 0)
+h$semi_d <- ifelse(h$house_type == "Semi-D", 1, 0)
+h$terrace <- ifelse(h$house_type == "Terrace", 1, 0)
+h$apartment <- ifelse(h$house_type == "Apartment", 1, 0)
+h$dublin <- ifelse(h$region == "dublin", 1, 0)
+h$cork <- ifelse(h$region == "cork", 1, 0)
+h$galway <- ifelse(h$region == "galway", 1, 0)
+h$dub_inner_ring <- ifelse(h$region == "dub_inner_ring", 1, 0)
+h$dub_outer_ring <- ifelse(h$region == "dub_outer_ring", 1, 0)
+h$urban_south <- ifelse(h$region == "urban_south", 1, 0)
+h$other <- ifelse(h$region == "other", 1, 0)
+
+```
+
+```{r}
+# Inspecting the result
+head(h)
+```
+
+```{r}
+# Removing the categorical variables now that the individual categories were converted into dummy variables
+h <- h %>% select(-house_type, -region)
+```
+
+```{r}
+# Creating a full model using a statistical approach
+m <- lm(sold_price_eur ~ ., data = h)
+```
+
+```{r}
+# Inspecting the result of the model
+summary(m)
+```
+
+```{r}
+plot(m,which=1)
+```
+```{r}
+plot(m,which=2)
+```
+```{r}
+m1 <- lm(log10(sold_price_eur) ~ ., data = h)
+
+summary(m1)
+```
+```{r}
+plot(m1,which=1)
+plot(m1,which=2)
+```
+```{r}
+h2 <- h %>% 
+  mutate(log_sold_price = log10(sold_price_eur), 
+         log_asking_price = log10(asking_price_eur)) %>% 
+  select(-sold_price_eur, -asking_price_eur)
+
+head(h2)
+```
+```{r}
+m2 <- lm(log_sold_price ~ ., data = h2)
+
+summary(m2)
+
+```
+```{r}
+plot(m2,which=1)
+plot(m2,which=2)
+```
+```{r}
+h3 <- h2 %>% 
+  select(-log_asking_price, -apartment, -other)
+
+m3 <- lm(log_sold_price ~ ., data = h3)
+
+summary(m3)
+
+```
+```{r}
+plot(m3,which=1)
+plot(m3,which=2)
+```
+```{r}
+h4 <- h3 %>% 
+  select(-bath_no)
+
+m4 <- lm(log_sold_price ~ ., data = h4)
+
+summary(m4)
+```
+
+```{r}
+plot(m4,which=1)
+plot(m4,which=2)
+```
+```{r}
+# Removing NA's as at this point it won't work for calculating the R2, RMSE and MAE
+h5 <- h4 %>% 
+  filter(across(everything(),
+                ~ !is.na(.)))
+dim(h5)
+
+h_80 <- round(0.8 * nrow(h5))
+
+set.seed(123)
+h_train_index <- sample(1:nrow(h5), h_80)
+h_train <- h5[h_train_index, ]
+
+h_test <- h5[-h_train_index, ]
+
+head(h_train, 2)
+head(h_test, 2)
+
+dim(h_train)
+dim(h_test)
+
+```
+```{r}
+# Fitting the model on the training data
+m5 <- lm(log_sold_price ~ ., data = h_train)
+
+summary(m5)
+```
+```{r}
+
+h_test$pred <- predict(m5, h_test)
+
+head(h_test)
+
+```
+
+```{r}
+# Measuring performance by comparing the prediction with the data using multiple criterion
+R_sq <- R2(h_test$pred, h_test$log_sold_price)
+RMSE <- RMSE(h_test$pred, h_test$log_sold_price)
+MAE <- MAE(h_test$pred, h_test$log_sold_price)
+print(c(R_sq, RMSE, MAE))
+```
+```{r}
+ggplot(h_test, aes(x=log_sold_price, y=pred))+
+  geom_point()+
+   geom_smooth(method = lm)
+```
+
